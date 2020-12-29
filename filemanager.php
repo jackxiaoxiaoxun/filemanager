@@ -1,7 +1,7 @@
 <?php
 /**
- * PHP File Manager (2017-08-07)
- * https://github.com/alexantr/filemanager
+ * coolbear File Manager (2020-12-29)
+ * https://github.com/jackxiaoxiaoxun/filemanager
  */
 
 // Auth with login/password (set true/false to enable/disable it)
@@ -9,7 +9,7 @@ $use_auth = true;
 
 // Users: array('Username' => 'Password', 'Username2' => 'Password2', ...)
 $auth_users = array(
-    'fm_admin' => 'fm_admin',
+    'xlxz_admin' => 'xlxz_admin',
 );
 
 // Enable highlight.js (https://highlightjs.org/) on view's page
@@ -370,30 +370,42 @@ if (isset($_POST['upl'])) {
         $path .= '/' . FM_PATH;
     }
 
-    $errors = 0;
-    $uploads = 0;
-    $total = count($_FILES['upload']['name']);
+    $post_file  = json_decode($_POST['file'], true);
+    $file       = $path . "/" . $post_file['name'];
 
-    for ($i = 0; $i < $total; $i++) {
-        $tmp_name = $_FILES['upload']['tmp_name'][$i];
-        if (empty($_FILES['upload']['error'][$i]) && !empty($tmp_name) && $tmp_name != 'none') {
-            if (move_uploaded_file($tmp_name, $path . '/' . $_FILES['upload']['name'][$i])) {
-                $uploads++;
-            } else {
-                $errors++;
-            }
+    if (file_exists($file)) 
+    {
+        $file_size  = filesize($file);
+        if ($file_size >= $post_file['size']) 
+        {
+            echo json_encode(['ok' => 'done']);
+            return;
         }
+
+        if (empty($_FILES['part']['tmp_name'])) 
+        {
+            echo json_encode(['ok' => 'go', 'size' => $file_size]);
+            return;
+        }
+
+        $num = seek_file_put_contents($file, file_get_contents($_FILES['part']['tmp_name']), $post_file['offset']);
+
+        $file_size  +=  $num;
+
+        if ($file_size >= $post_file['size']) 
+        {
+            echo json_encode(['ok' => 'done']);
+            return;
+        }
+    } else 
+    {
+        touch($file);
+        $file_size  = 0;
     }
 
-    if ($errors == 0 && $uploads > 0) {
-        fm_set_msg(sprintf('All files uploaded to <b>%s</b>', fm_enc($path)));
-    } elseif ($errors == 0 && $uploads == 0) {
-        fm_set_msg('Nothing uploaded', 'alert');
-    } else {
-        fm_set_msg(sprintf('Error while uploading files. Uploaded files: %s', $uploads), 'error');
-    }
-
-    fm_redirect(FM_SELF_URL . '?p=' . urlencode(FM_PATH));
+    echo json_encode(['ok' => 'go', 'size' => $file_size]);
+ 
+    return;
 }
 
 // Mass deleting
@@ -609,21 +621,128 @@ if (isset($_GET['upload'])) {
     <div class="path">
         <p><b>Uploading files</b></p>
         <p class="break-word">Destination folder: <?php echo fm_enc(fm_convert_win(FM_ROOT_PATH . '/' . FM_PATH)) ?></p>
-        <form action="" method="post" enctype="multipart/form-data">
+        <form action="" method="post" id="upload_form" enctype="multipart/form-data">
             <input type="hidden" name="p" value="<?php echo fm_enc(FM_PATH) ?>">
             <input type="hidden" name="upl" value="1">
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <input type="file" name="upload[]"><br>
-            <br>
-            <p>
-                <button class="btn"><i class="icon-apply"></i> Upload</button> &nbsp;
-                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-cancel"></i> Cancel</a></b>
-            </p>
         </form>
+
+            <input type="file" id="file" name="part" multiple><br>
+            <br>
+            <p id="up_button">
+                <button class="btn" id="toupload"><i class="icon-apply"></i> Upload</button> &nbsp;
+                <b><a href="?p=<?php echo urlencode(FM_PATH) ?>"><i class="icon-goback"></i> Back</a></b>
+            </p>
     </div>
+
+<script>
+        const LENGTH = 2 * 1024 * 1024;
+
+
+    $(function () {
+
+        var call_ajax = (formData, funcall) => {
+            $.ajax({
+                type: "POST",
+                url: window.location.href ,
+                data: formData,
+                processData: false,
+                contentType: false,
+                dataType: "json",
+                success: funcall
+            });
+        }
+
+        var uploadfile = (up_file) => {
+
+            if (typeof up_file == "undefined") {
+                return;
+            }
+
+            var blockquote = document.createElement("blockquote");
+
+            var progress = document.createElement('progress');
+            progress.style.width = '300px';
+            progress.max = 100;
+            progress.value = 0;
+            blockquote.appendChild(progress);
+
+            var status = document.createElement('span');
+            status.style.marginRight = '10px';
+            blockquote.appendChild(status);
+
+            var fname = document.createElement('span');
+            fname.innerHTML = up_file.name
+            blockquote.appendChild(fname);
+
+            document.getElementById('up_button').appendChild(blockquote);
+
+            function bfbs(bfb, size, pro, sd) {
+
+            bfb = Math.ceil(100 * bfb / size);
+            bfb > 100 ? bfb = 100 : bfb = bfb;
+
+            pro.style.display = 'block';
+            pro.setAttribute('value', bfb);
+
+            sd.innerHTML = bfb + '%';
+        }
+
+
+            var x = document.getElementById("upload_form");
+            var formData = new FormData(x);
+
+            var filejson = {
+                'name': up_file.name,
+                'type': up_file.type,
+                'size': up_file.size,
+            };
+
+            formData.append("file", JSON.stringify( filejson));
+
+            var backCall = (d) => {
+                if (d.ok == "done") {
+                    bfbs(up_file.size, up_file.size, progress, status)
+                    return;
+                }
+                uploadSome(d.size, up_file)
+            };
+
+            var uploadSome = (size, file) => {
+                var sta = size;
+                var end = sta + LENGTH;
+                var fd = new FormData(x);
+
+                filejson.offset = size;
+                blob = file.slice(sta, end);
+
+                fd.append("file", JSON.stringify( filejson));
+                fd.append('part', blob);
+
+                bfbs(end, file.size, progress, status)
+
+                call_ajax(fd, backCall);
+            }
+
+            call_ajax(formData, backCall);
+
+        }
+
+        $("#toupload").on('click',function(){
+            var files = document.getElementById("file").files;
+            for(var i = 0; i < files.length; i++)
+            {
+                uploadfile(files[i])
+            }
+        });
+
+    });
+
+
+</script>
+
+
+
+
     <?php
     fm_show_footer();
     exit;
@@ -1069,6 +1188,27 @@ fm_show_footer();
 //--- END
 
 // Functions
+
+/**
+ * write data to file
+ * @param string $file full path file
+ * @param string $data data to file
+ * @param int $offset data position
+ * @return int
+ */
+function seek_file_put_contents($file, $data, $offset = null)
+{
+    $fd     = fopen($file, "ab");
+    if(! is_null($offset))
+    {
+        fseek($fd, $offset);
+    }
+    $writeNum   = fwrite($fd, $data);
+    fclose($fd);
+
+    return $writeNum;
+}
+
 
 /**
  * Delete  file or folder (recursively)
@@ -1714,7 +1854,7 @@ function fm_show_header()
 <html>
 <head>
 <meta charset="utf-8">
-<title>PHP File Manager</title>
+<title>coolbear File Manager</title>
 <style>
 html,body,div,span,p,pre,a,code,em,img,small,strong,ol,ul,li,form,label,table,tr,th,td{margin:0;padding:0;vertical-align:baseline;outline:none;font-size:100%;background:transparent;border:none;text-decoration:none}
 html{overflow-y:scroll}body{padding:0;font:13px/16px Tahoma,Arial,sans-serif;color:#222;background:#efefef}
@@ -1769,6 +1909,7 @@ code.maxheight,pre.maxheight{max-height:512px}input[type="checkbox"]{margin:0;pa
 </style>
 <link rel="icon" href="<?php echo FM_SELF_URL ?>?img=favicon" type="image/png">
 <link rel="shortcut icon" href="<?php echo FM_SELF_URL ?>?img=favicon" type="image/png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script>
 <?php if (isset($_GET['view']) && FM_USE_HIGHLIGHTJS): ?>
 <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.2.0/styles/<?php echo FM_HIGHLIGHTJS_STYLE ?>.min.css">
 <?php endif; ?>
@@ -1784,7 +1925,7 @@ code.maxheight,pre.maxheight{max-height:512px}input[type="checkbox"]{margin:0;pa
 function fm_show_footer()
 {
     ?>
-<p class="center"><small><a href="https://github.com/alexantr/filemanager" target="_blank">PHP File Manager</a></small></p>
+<p class="center"><small><a href="javascript:;" target="">coolbear File Manager</a></small></p>
 </div>
 <script>
 function newfolder(p){var n=prompt('New folder name','folder');if(n!==null&&n!==''){window.location.search='p='+encodeURIComponent(p)+'&new='+encodeURIComponent(n);}}
